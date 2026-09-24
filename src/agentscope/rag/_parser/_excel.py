@@ -306,7 +306,13 @@ class ExcelParser(ParserBase):
         sheet_sections: list[Section] = []
 
         try:
-            df = excel_file.parse(sheet_name=sheet_name)
+            # Preserve stored text such as identifiers with leading zeros
+            # and literal "NA"/"NULL" values for downstream retrieval.
+            df = excel_file.parse(
+                sheet_name=sheet_name,
+                dtype=object,
+                keep_default_na=False,
+            )
         except Exception as e:
             logger.warning("Failed to parse sheet '%s': %s", sheet_name, e)
             return sheet_sections

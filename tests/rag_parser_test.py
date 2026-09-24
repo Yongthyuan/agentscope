@@ -1022,6 +1022,59 @@ class PPTParserTest(IsolatedAsyncioTestCase):
 class ExcelParserTest(IsolatedAsyncioTestCase):
     """Behavioural coverage for :class:`ExcelParser`."""
 
+    async def test_preserves_literal_text_cells(self) -> None:
+        """Text identifiers and NA-like strings reach the RAG text intact."""
+        xlsx_bytes = _make_xlsx_simple(
+            {
+                "Data": [
+                    ["Code", "Region", "Status"],
+                    ["00123", "NA", "NULL"],
+                    ["00456", "EU", "N/A"],
+                ],
+            },
+        )
+        sections = await ExcelParser(include_sheet_names=False).parse(
+            xlsx_bytes,
+            "identifiers.xlsx",
+        )
+
+        self.assertEqual(len(sections), 1)
+        self.assertEqual(
+            sections[0].content.text,
+            "| Code | Region | Status |\n"
+            "| --- | --- | --- |\n"
+            "| 00123 | NA | NULL |\n"
+            "| 00456 | EU | N/A |\n",
+        )
+
+    async def test_preserves_text_alongside_numeric_and_blank_cells(
+        self,
+    ) -> None:
+        """JSON rows preserve text, numbers, booleans and blank cells."""
+        from openpyxl import Workbook
+
+        workbook = Workbook()
+        workbook.active.append(["Code", "Count", "Enabled", "Optional"])
+        workbook.active.append(["00123", 7, True, None])
+        workbook.active.append(["00456", 0, False, "NA"])
+        buffer = io.BytesIO()
+        workbook.save(buffer)
+        workbook.close()
+
+        sections = await ExcelParser(
+            include_sheet_names=False,
+            table_format="json",
+        ).parse(buffer.getvalue(), "mixed.xlsx")
+
+        self.assertEqual(len(sections), 1)
+        self.assertEqual(
+            sections[0].content.text,
+            "<system-info>A table loaded as a JSON array:</system-info>\n"
+            '["Code", "Count", "Enabled", "Optional"]\n'
+            '["00123", "7", "True", ""]\n'
+            '["00456", "0", "False", "NA"]',
+        )
+
     async def test_header_only_sheet(self) -> None:
         """A sheet with only a header row is kept as a table."""
         xlsx_bytes = _make_xlsx_simple({"Data": [["Revenue", "Year"]]})
